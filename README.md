@@ -13,7 +13,8 @@
  }
 ```
  
- ## reminder  
+## reminder  
+
  the newest Couchbase-net-client has some bug use with Orleans.  
  I submit a pull request to fixed this problem.(https://github.com/couchbase/couchbase-net-client/pull/34)  
  so this libary use a couchbase-net-client compile from https://github.com/weitaolee/couchbase-net-client  
