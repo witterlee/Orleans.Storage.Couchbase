@@ -5,6 +5,19 @@ VisualStudioVersion = 12.0.31101.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orleans.Storage.Couchbase", "Orleans.Storage.Couchbase\Orleans.Storage.Couchbase.csproj", "{C87F74C4-7DD1-4214-84B9-3C7E00F1B34C}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".nuget", ".nuget", "{3CDB419A-8209-45A3-9E31-2265761BE81F}"
+	ProjectSection(SolutionItems) = preProject
+		.nuget\NuGet.Config = .nuget\NuGet.Config
+		.nuget\NuGet.exe = .nuget\NuGet.exe
+		.nuget\NuGet.targets = .nuget\NuGet.targets
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Libs", "Libs", "{37AA21AF-A8E7-4907-8C46-4DC1656B8B8B}"
+	ProjectSection(SolutionItems) = preProject
+		Libs\Common.Logging.dll = Libs\Common.Logging.dll
+		Libs\Couchbase.NetClient.dll = Libs\Couchbase.NetClient.dll
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
