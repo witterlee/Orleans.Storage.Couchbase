@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Couchbase;
 using Couchbase.Core;
+using Couchbase.IO;
 using Couchbase.Configuration.Client;
 using Newtonsoft.Json;
 
@@ -17,8 +18,9 @@ namespace Orleans.Storage.Couchbase
     /// <remarks>
     /// The storage provider should be included in a deployment by adding this line to the Orleans server configuration file:
     /// 
-    ///     <Provider Type="Orleans.Storage.Couchbase.CouchbaseStorage" Name="CouchbaseStore" Database="db-name" ConnectionString="mongodb://YOURHOSTNAME:27017/" />
-    ///
+    ///     <Provider Type="Orleans.Storage.Couchbase.CouchbaseStorage" Name="CouchbaseStore" BucketName="bucketName" BucketPassword="bucketPassword" UseSsl="true" Servers="http://192.168.0.100:8091/pools;http://192.168.0.101:8091/pools"  />
+    ///        Or
+    ///     <Provider Type="Orleans.Storage.Couchbase.CouchbaseStorage" Name="CouchbaseStore" BucketName="bucketName" BucketPassword="bucketPassword" Servers="http://192.168.0.100:8091/pools;http://192.168.0.101:8091/pools" />
     /// and this line to any grain that uses it:
     /// 
     ///     [StorageProvider(ProviderName = "CouchbaseStore")]
@@ -44,12 +46,11 @@ namespace Orleans.Storage.Couchbase
             this.Name = name;
             this.BucketName = config.Properties["BucketName"];
             this.BucketPassword = config.Properties["BucketPassword"];
-            var useSslString = config.Properties["UseSsl"];
             var servers = config.Properties["Servers"];
 
             bool useSsl = false;
-            if (!string.IsNullOrEmpty(useSslString))
-                bool.TryParse(useSslString, out useSsl);
+            if (config.Properties.ContainsKey("UseSsl"))
+                bool.TryParse(config.Properties["UseSsl"], out useSsl);
             this.UseSsl = useSsl;
 
             this.Servers = ParseServerUris(servers);
@@ -105,17 +106,19 @@ namespace Orleans.Storage.Couchbase
         /// </summary>
         /// <param name="key">The grain id string.</param>
         /// <returns>Completion promise for this operation.</returns>
-        public async Task Delete(string key)
+        public Task Delete(string key)
         {
             var result = this._bucket.Remove(key);
 
             if (!result.Success)
             {
-                var exist = await this._bucket.GetAsync<string>(key);
+                var exist = this._bucket.Get<string>(key);
 
                 if (exist.Success)
                     this._bucket.Remove(key);
             }
+
+            return TaskDone.Done;
         }
 
         /// <summary>
@@ -123,15 +126,20 @@ namespace Orleans.Storage.Couchbase
         /// </summary>
         /// <param name="key">The grain id string.</param>
         /// <returns>Completion promise for this operation.</returns>
-        public async Task<string> Read(string key)
+        public Task<string> Read(string key)
         {
-            var entity = await this._bucket.GetAsync<string>(key);
-            var result = string.Empty;
+            var result = this._bucket.Get<string>(key);
+            var data = string.Empty;
+            if (result.Status == ResponseStatus.Success)
+                data = result.Value;
+            else if (result.Status == ResponseStatus.KeyNotFound)
+                data = string.Empty;
+            else if (result.Status == ResponseStatus.Busy)
+                throw new Exception("couchbase server too busy");
+            else if (result.Status == ResponseStatus.OperationTimeout)
+                throw new Exception("read from couchbase time out");
 
-            if (entity.Success)
-                result = entity.Value;
-
-            return result;
+            return Task.FromResult(data);
         }
 
         /// <summary>
@@ -142,7 +150,16 @@ namespace Orleans.Storage.Couchbase
         /// <returns>Completion promise for this operation.</returns>
         public Task Write(string key, string entityData)
         {
-            this._bucket.Upsert(key, entityData);
+            var result = this._bucket.Upsert(key, entityData);
+
+            if (result.Status == ResponseStatus.Success)
+                return TaskDone.Done;
+            else if (result.Status == ResponseStatus.Busy)
+                throw new Exception("couchbase server too busy");
+            else if (result.Status == ResponseStatus.OperationTimeout)
+                throw new Exception("write to couchbase time out");
+            else if (result.Status == ResponseStatus.ValueTooLarge)
+                throw new Exception("data value too large to write");
 
             return TaskDone.Done;
         }

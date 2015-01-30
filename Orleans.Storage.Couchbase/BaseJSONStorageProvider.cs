@@ -80,7 +80,7 @@ namespace Orleans.Storage.Couchbase
         {
             if (DataManager == null) throw new ArgumentException("DataManager property not initialized");
             var entityData = await DataManager.Read(grainReference.ToKeyString());
-            if (entityData != null)
+            if (!string.IsNullOrEmpty(entityData))
             {
                 ConvertFromStorageFormat(grainState, entityData);
             }
@@ -96,7 +96,7 @@ namespace Orleans.Storage.Couchbase
         public Task WriteStateAsync(string grainType, GrainReference grainReference, IGrainState grainState)
         {
             if (DataManager == null) throw new ArgumentException("DataManager property not initialized");
-            var entityData = ConvertToStorageFormat(grainState);
+            var entityData = ConvertToStorageFormat(grainType, grainState);
             return DataManager.Write(grainReference.ToKeyString(), entityData);
         }
 
@@ -120,9 +120,11 @@ namespace Orleans.Storage.Couchbase
         /// <param name="grainState">Grain state to be converted into JSON storage format.</param>
         /// <remarks>  
         /// </remarks>
-        protected static string ConvertToStorageFormat(IGrainState grainState)
+        protected static string ConvertToStorageFormat(string grainType, IGrainState grainState)
         {
             IDictionary<string, object> dataValues = grainState.AsDictionary();
+            //store _Type into couchbase
+            dataValues["_Type"] = grainType;
             return JsonConvert.SerializeObject(dataValues);
         }
 
@@ -133,6 +135,7 @@ namespace Orleans.Storage.Couchbase
         /// <param name="entityData">JSON storage format representaiton of the grain state.</param>
         protected static void ConvertFromStorageFormat(IGrainState grainState, string entityData)
         {
+            var setting = new JsonSerializerSettings();  
             object data = JsonConvert.DeserializeObject(entityData, grainState.GetType());
             var dict = ((IGrainState)data).AsDictionary();
             grainState.SetAll(dict);
