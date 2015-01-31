@@ -9,6 +9,8 @@ using Couchbase.Core;
 using Couchbase.IO;
 using Couchbase.Configuration.Client;
 using Newtonsoft.Json;
+using System.Configuration;
+using Couchbase.Configuration.Client.Providers;
 
 namespace Orleans.Storage.Couchbase
 {
@@ -18,9 +20,7 @@ namespace Orleans.Storage.Couchbase
     /// <remarks>
     /// The storage provider should be included in a deployment by adding this line to the Orleans server configuration file:
     /// 
-    ///     <Provider Type="Orleans.Storage.Couchbase.CouchbaseStorage" Name="CouchbaseStore" BucketName="bucketName" BucketPassword="bucketPassword" UseSsl="true" Servers="http://192.168.0.100:8091/pools;http://192.168.0.101:8091/pools"  />
-    ///        Or
-    ///     <Provider Type="Orleans.Storage.Couchbase.CouchbaseStorage" Name="CouchbaseStore" BucketName="bucketName" BucketPassword="bucketPassword" Servers="http://192.168.0.100:8091/pools;http://192.168.0.101:8091/pools" />
+    ///     <Provider Type="Orleans.Storage.Couchbase.CouchbaseStorage" Name="CouchbaseStore" ConfigSectionName="couchbaseClients/couchbaseDataStore" /> 
     /// and this line to any grain that uses it:
     /// 
     ///     [StorageProvider(ProviderName = "CouchbaseStore")]
@@ -29,8 +29,7 @@ namespace Orleans.Storage.Couchbase
     /// </remarks>
     public class CouchbaseStorage : BaseJSONStorageProvider
     {
-        public string BucketPassword { get; set; }
-        public string BucketName { get; set; }
+        public string ConfigSectionName { get; set; }
         public Uri[] Servers { get; set; }
         public bool UseSsl { get; set; }
 
@@ -44,43 +43,20 @@ namespace Orleans.Storage.Couchbase
         public override Task Init(string name, IProviderRuntime providerRuntime, IProviderConfiguration config)
         {
             this.Name = name;
-            this.BucketName = config.Properties["BucketName"];
-            this.BucketPassword = config.Properties["BucketPassword"];
-            var servers = config.Properties["Servers"];
+            this.ConfigSectionName = config.Properties["ConfigSectionName"];
 
-            bool useSsl = false;
-            if (config.Properties.ContainsKey("UseSsl"))
-                bool.TryParse(config.Properties["UseSsl"], out useSsl);
-            this.UseSsl = useSsl;
-
-            this.Servers = ParseServerUris(servers);
-
-            if (string.IsNullOrWhiteSpace(BucketName)) throw new ArgumentException("BucketName property not set");
-            if (string.IsNullOrWhiteSpace(BucketPassword)) throw new ArgumentException("BucketPassword property not set");
-            if (this.Servers.Length == 0) throw new ArgumentException("Servers property not set");
-
-            DataManager = new GrainStateCouchbaseDataManager(BucketName, BucketPassword, Servers, UseSsl);
+            if (string.IsNullOrWhiteSpace(ConfigSectionName)) throw new ArgumentException("ConfigSectionName property not set");
+            var configSection = ReadConfig(ConfigSectionName);
+            DataManager = new GrainStateCouchbaseDataManager(configSection);
             return base.Init(name, providerRuntime, config);
         }
-
-        private Uri[] ParseServerUris(string uriConfigString)
+ 
+        private CouchbaseClientSection ReadConfig(string sectionName)
         {
-            List<Uri> servers = new List<Uri>();
+            var section = (CouchbaseClientSection)ConfigurationManager.GetSection(sectionName);
+            if (section.Servers.Count == 0) throw new ArgumentException("Couchbase servers not set");
 
-            if (!string.IsNullOrEmpty(uriConfigString))
-            {
-                string[] uris = uriConfigString.Split(new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
-
-                if (uris != null && uris.Length > 0)
-                {
-                    foreach (string uri in uris)
-                    {
-                        servers.Add(new Uri(uri));
-                    }
-                }
-            }
-
-            return servers.ToArray();
+            return section;
         }
     }
 
@@ -89,16 +65,22 @@ namespace Orleans.Storage.Couchbase
     /// </summary>
     internal class GrainStateCouchbaseDataManager : IJSONStateDataManager
     {
-        public GrainStateCouchbaseDataManager(string bucketName, string bucketPassword, Uri[] servers, bool useSsl = false)
+        public GrainStateCouchbaseDataManager(CouchbaseClientSection configSection)
         {
-            var config = new ClientConfiguration()
-            {
-                Servers = servers.ToList(),
-                UseSsl = useSsl
-            };
-
+            var config = new ClientConfiguration(configSection);
             ClusterHelper.Initialize(config);
-            this._bucket = ClusterHelper.Get().OpenBucket(bucketName, bucketPassword);
+
+            if (configSection.Buckets.Count > 0)
+            {
+                var buckets = new BucketElement[configSection.Buckets.Count];
+                configSection.Buckets.CopyTo(buckets, 0);
+
+                var bucketSetting = buckets.First();
+                this._bucket = ClusterHelper.Get().OpenBucket(bucketSetting.Name, bucketSetting.Password);
+
+            }
+            else
+                this._bucket = ClusterHelper.Get().OpenBucket();
         }
 
         /// <summary>

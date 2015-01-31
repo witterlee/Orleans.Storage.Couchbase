@@ -1,19 +1,57 @@
 # Orleans.Storage.Couchbase
    Orleans Storage Provider Of Couchbase
-## use case
 
-```csharp
-  <Provider Type="Orleans.Storage.Couchbase.CouchbaseStorage" Name="CouchbaseStore" BucketName="bucketName" BucketPassword="bucketPassword" UseSsl="true" Servers="http://192.168.0.100:8091/pools;http://192.168.0.101:8091/pools"  />
+## USE CASE
+
+ 
+###### 1. App.config
+```xml  
+<?xml version="1.0" encoding="utf-8" ?>
+<configuration>
+  <configSections>
+    <sectionGroup name="couchbaseClients">
+      <section name="couchbaseDataStore" type="Couchbase.Configuration.Client.Providers.CouchbaseClientSection, Couchbase.NetClient" />
+    </sectionGroup>
+  </configSections>
+  <couchbaseClients>
+    <couchbaseDataStore>
+      <servers>
+        <add uri="http://192.168.0.100:8091" />
+      </servers>
+      <buckets>
+        <add name="datastore" password="datastore" useSsl="false" />
+      </buckets>
+    </couchbaseDataStore>
+  </couchbaseClients>
+  <runtime>
+    <gcServer enabled="true"/>
+  </runtime>
+</configuration>
+``` 
+
+###### 2. ServerConfiguration.xml
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<OrleansConfiguration xmlns="urn:orleans">
+  <Globals>
+    <StorageProviders>
+      <Provider Type="Orleans.Storage.MemoryStorage" Name="MemoryStore" />
+      <Provider Type="Orleans.Storage.Couchbase.CouchbaseStorage" Name="CouchbaseStore" ConfigSectionName="couchbaseClients/couchbaseDataStore" />
+    </StorageProviders>
+    <SeedNode Address="localhost" Port="11111" />
+  </Globals>
+</OrleansConfiguration>
+
 ```
-   
+###### 3. Code
 ```csharp
  [StorageProvider(ProviderName = "CouchbaseStore")]
- public class BankAcount : IGrain
+ public class BankAccount : IGrain,IBacnkAccount
  {
  }
 ```
  
- ## reminder  
+## REMINDER  
  the newest Couchbase-net-client has some bug use with Orleans.  
  I submit a pull request to fixed this problem.(https://github.com/couchbase/couchbase-net-client/pull/34)  
  so this libary use a couchbase-net-client compile from https://github.com/weitaolee/couchbase-net-client  
