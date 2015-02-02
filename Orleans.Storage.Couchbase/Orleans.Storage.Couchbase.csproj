@@ -58,11 +58,13 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CouchbaseStorage.cs" />
-    <Compile Include="IJSONStateDataManager.cs" />
-    <Compile Include="BaseJSONStorageProvider.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="App.config">
+      <SubType>Designer</SubType>
+    </None>
+    <None Include="Orleans.Storage.Couchbase.1.0.1.1.nupkg" />
     <None Include="Orleans.Storage.Couchbase.nuspec" />
     <None Include="packages.config" />
   </ItemGroup>

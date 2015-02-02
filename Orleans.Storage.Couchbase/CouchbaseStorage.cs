@@ -11,6 +11,7 @@ using Couchbase.Configuration.Client;
 using Newtonsoft.Json;
 using System.Configuration;
 using Couchbase.Configuration.Client.Providers;
+using Orleans.Runtime;
 
 namespace Orleans.Storage.Couchbase
 {
@@ -27,11 +28,23 @@ namespace Orleans.Storage.Couchbase
     /// 
     /// The name 'CouchbaseStore' is an arbitrary choice.
     /// </remarks>
-    public class CouchbaseStorage : BaseJSONStorageProvider
+    public class CouchbaseStorage : IStorageProvider
     {
+        /// <summary>
+        /// Logger object
+        /// </summary>
+        public Logger Log { get; protected set; }
         public string ConfigSectionName { get; set; }
-        public Uri[] Servers { get; set; }
-        public bool UseSsl { get; set; }
+        /// <summary>
+        /// Storage provider name
+        /// </summary>
+        public string Name { get; protected set; }
+
+        /// <summary>
+        /// Data manager instance
+        /// </summary>
+        /// <remarks>The data manager is responsible for reading and writing JSON strings.</remarks>
+        GrainStateCouchbaseDataManager DataManager { get; set; }
 
         /// <summary>
         /// Initializes the storage provider.
@@ -39,8 +52,8 @@ namespace Orleans.Storage.Couchbase
         /// <param name="name">The name of this provider instance.</param>
         /// <param name="providerRuntime">A Orleans runtime object managing all storage providers.</param>
         /// <param name="config">Configuration info for this provider instance.</param>
-        /// <returns>Completion promise for this operation.</returns>
-        public override Task Init(string name, IProviderRuntime providerRuntime, IProviderConfiguration config)
+        /// <returns>Completion promise for this operation.</returns> 
+        public Task Init(string name, IProviderRuntime providerRuntime, IProviderConfiguration config)
         {
             this.Name = name;
             this.ConfigSectionName = config.Properties["ConfigSectionName"];
@@ -48,9 +61,95 @@ namespace Orleans.Storage.Couchbase
             if (string.IsNullOrWhiteSpace(ConfigSectionName)) throw new ArgumentException("ConfigSectionName property not set");
             var configSection = ReadConfig(ConfigSectionName);
             DataManager = new GrainStateCouchbaseDataManager(configSection);
-            return base.Init(name, providerRuntime, config);
+            Log = providerRuntime.GetLogger(this.GetType().FullName);
+            return TaskDone.Done;
         }
- 
+
+        /// <summary>
+        /// Closes the storage provider during silo shutdown.
+        /// </summary>
+        /// <returns>Completion promise for this operation.</returns>
+        public Task Close()
+        {
+            if (DataManager != null)
+                DataManager.Dispose();
+            DataManager = null;
+            return TaskDone.Done;
+        }
+
+        /// <summary>
+        /// Reads persisted state from the backing store and deserializes it into the the target
+        /// grain state object.
+        /// </summary>
+        /// <param name="grainType">A string holding the name of the grain class.</param>
+        /// <param name="grainReference">Represents the long-lived identity of the grain.</param>
+        /// <param name="grainState">A reference to an object to hold the persisted state of the grain.</param>
+        /// <returns>Completion promise for this operation.</returns>
+        public async Task ReadStateAsync(string grainType, GrainReference grainReference, IGrainState grainState)
+        {
+            if (DataManager == null) throw new ArgumentException("DataManager property not initialized");
+            var entityData = await DataManager.Read(grainReference.ToKeyString());
+            if (!string.IsNullOrEmpty(entityData))
+            {
+                ConvertFromStorageFormat(grainState, entityData);
+            }
+        }
+
+        /// <summary>
+        /// Writes the persisted state from a grain state object into its backing store.
+        /// </summary>
+        /// <param name="grainType">A string holding the name of the grain class.</param>
+        /// <param name="grainReference">Represents the long-lived identity of the grain.</param>
+        /// <param name="grainState">A reference to an object holding the persisted state of the grain.</param>
+        /// <returns>Completion promise for this operation.</returns>
+        public Task WriteStateAsync(string grainType, GrainReference grainReference, IGrainState grainState)
+        {
+            if (DataManager == null) throw new ArgumentException("DataManager property not initialized");
+            var entityData = ConvertToStorageFormat(grainType, grainState);
+            return DataManager.Write(grainReference.ToKeyString(), entityData);
+        }
+
+        /// <summary>
+        /// Removes grain state from its backing store, if found.
+        /// </summary>
+        /// <param name="grainType">A string holding the name of the grain class.</param>
+        /// <param name="grainReference">Represents the long-lived identity of the grain.</param>
+        /// <param name="grainState">An object holding the persisted state of the grain.</param>
+        /// <returns></returns>
+        public Task ClearStateAsync(string grainType, GrainReference grainReference, IGrainState grainState)
+        {
+            if (DataManager == null) throw new ArgumentException("DataManager property not initialized");
+            DataManager.Delete(grainReference.ToKeyString());
+            return TaskDone.Done;
+        }
+
+        /// <summary>
+        /// Serializes from a grain instance to a JSON document.
+        /// </summary>
+        /// <param name="grainState">Grain state to be converted into JSON storage format.</param>
+        /// <remarks>  
+        /// </remarks>
+        protected static string ConvertToStorageFormat(string grainType, IGrainState grainState)
+        {
+            IDictionary<string, object> dataValues = grainState.AsDictionary();
+            //store _Type into couchbase
+            dataValues["_Type"] = grainType;
+            return JsonConvert.SerializeObject(dataValues);
+        }
+
+        /// <summary>
+        /// Constructs a grain state instance by deserializing a JSON document.
+        /// </summary>
+        /// <param name="grainState">Grain state to be populated for storage.</param>
+        /// <param name="entityData">JSON storage format representaiton of the grain state.</param>
+        protected static void ConvertFromStorageFormat(IGrainState grainState, string entityData)
+        {
+            var setting = new JsonSerializerSettings();
+            object data = JsonConvert.DeserializeObject(entityData, grainState.GetType());
+            var dict = ((IGrainState)data).AsDictionary();
+            grainState.SetAll(dict);
+        }
+
         private CouchbaseClientSection ReadConfig(string sectionName)
         {
             var section = (CouchbaseClientSection)ConfigurationManager.GetSection(sectionName);
@@ -63,12 +162,12 @@ namespace Orleans.Storage.Couchbase
     /// <summary>
     /// Interfaces with a Couchbase database driver.
     /// </summary>
-    internal class GrainStateCouchbaseDataManager : IJSONStateDataManager
+    internal class GrainStateCouchbaseDataManager
     {
         public GrainStateCouchbaseDataManager(CouchbaseClientSection configSection)
         {
             var config = new ClientConfiguration(configSection);
-            ClusterHelper.Initialize(config);
+            _cluster = new Cluster(config);
 
             if (configSection.Buckets.Count > 0)
             {
@@ -155,6 +254,7 @@ namespace Orleans.Storage.Couchbase
             ClusterHelper.Close();
         }
 
+        private static Cluster _cluster;
         private IBucket _bucket;
     }
 }
