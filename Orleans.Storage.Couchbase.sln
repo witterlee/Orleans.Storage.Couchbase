@@ -12,12 +12,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".nuget", ".nuget", "{3CDB41
 		.nuget\NuGet.targets = .nuget\NuGet.targets
 	EndProjectSection
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Libs", "Libs", "{37AA21AF-A8E7-4907-8C46-4DC1656B8B8B}"
-	ProjectSection(SolutionItems) = preProject
-		Libs\Common.Logging.dll = Libs\Common.Logging.dll
-		Libs\Couchbase.NetClient.dll = Libs\Couchbase.NetClient.dll
-	EndProjectSection
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

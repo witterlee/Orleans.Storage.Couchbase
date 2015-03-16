@@ -41,6 +41,12 @@ namespace Orleans.Storage.Couchbase
         public string Name { get; protected set; }
 
         /// <summary>
+        /// use grain's guid key as the storage key,default is true
+        /// <remarks>default is true,use guid as the storeage key, else false use like GrainReference=40011c8c7bcc4141b3569464533a06a203ffffff9c20d2b7 as the key </remarks>
+        /// </summary>
+        public bool UseGuidAsStorageKey { get; protected set; }
+
+        /// <summary>
         /// Data manager instance
         /// </summary>
         /// <remarks>The data manager is responsible for reading and writing JSON strings.</remarks>
@@ -57,6 +63,13 @@ namespace Orleans.Storage.Couchbase
         {
             this.Name = name;
             this.ConfigSectionName = config.Properties["ConfigSectionName"];
+            var useGuidAsStorageKeyString = config.Properties["UseGuidAsStorageKey"];
+            var useGuidAsStorageKey = true;//default is true
+
+            if (!string.IsNullOrWhiteSpace(useGuidAsStorageKeyString))
+                Boolean.TryParse(useGuidAsStorageKeyString, out useGuidAsStorageKey);
+
+            this.UseGuidAsStorageKey = useGuidAsStorageKey;
 
             if (string.IsNullOrWhiteSpace(ConfigSectionName)) throw new ArgumentException("ConfigSectionName property not set");
             var configSection = ReadConfig(ConfigSectionName);
@@ -88,7 +101,13 @@ namespace Orleans.Storage.Couchbase
         public async Task ReadStateAsync(string grainType, GrainReference grainReference, IGrainState grainState)
         {
             if (DataManager == null) throw new ArgumentException("DataManager property not initialized");
-            var entityData = await DataManager.Read(grainReference.ToKeyString());
+
+            string extendKey;
+
+            var key = this.UseGuidAsStorageKey ? grainReference.GetPrimaryKey(out extendKey).ToString() : grainReference.ToKeyString();
+
+            var entityData = await DataManager.Read(key);
+
             if (!string.IsNullOrEmpty(entityData))
             {
                 ConvertFromStorageFormat(grainState, entityData);
@@ -106,7 +125,12 @@ namespace Orleans.Storage.Couchbase
         {
             if (DataManager == null) throw new ArgumentException("DataManager property not initialized");
             var entityData = ConvertToStorageFormat(grainType, grainState);
-            return DataManager.Write(grainReference.ToKeyString(), entityData);
+
+            string extendKey;
+
+            var key = this.UseGuidAsStorageKey ? grainReference.GetPrimaryKey(out extendKey).ToString() : grainReference.ToKeyString();
+
+            return DataManager.Write(key, entityData);
         }
 
         /// <summary>
@@ -119,7 +143,13 @@ namespace Orleans.Storage.Couchbase
         public Task ClearStateAsync(string grainType, GrainReference grainReference, IGrainState grainState)
         {
             if (DataManager == null) throw new ArgumentException("DataManager property not initialized");
-            DataManager.Delete(grainReference.ToKeyString());
+
+            string extendKey;
+
+            var key = this.UseGuidAsStorageKey ? grainReference.GetPrimaryKey(out extendKey).ToString() : grainReference.ToKeyString();
+
+            DataManager.Delete(key);
+
             return TaskDone.Done;
         }
 
@@ -175,11 +205,10 @@ namespace Orleans.Storage.Couchbase
                 configSection.Buckets.CopyTo(buckets, 0);
 
                 var bucketSetting = buckets.First();
-                this._bucket = ClusterHelper.Get().OpenBucket(bucketSetting.Name, bucketSetting.Password);
-
+                this._bucket = _cluster.OpenBucket(bucketSetting.Name, bucketSetting.Password);
             }
             else
-                this._bucket = ClusterHelper.Get().OpenBucket();
+                this._bucket = _cluster.OpenBucket();
         }
 
         /// <summary>

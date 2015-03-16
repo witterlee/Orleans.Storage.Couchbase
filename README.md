@@ -1,5 +1,16 @@
 # Orleans.Storage.Couchbase
    Orleans Storage Provider Of Couchbase
+##simple
+  You can a simple from this link [https://github.com/weitaolee/Orleans.EventSourcing](https://github.com/weitaolee/Orleans.EventSourcing "Simple Link")
+####update log 
+######2015-3-16
+   1.fix bug   
+   2.add UseGuidAsStorageKey="True/Flase" config,default is True. 
+
+    True :store grain with a guid key
+    Flase:store grian with a key like 
+           GrainReference=40011c8c7bcc4141b3569464533a06a203ffffff9c20d2b7
+ 
 
 ## USE CASE
 
@@ -36,7 +47,7 @@
   <Globals>
     <StorageProviders>
       <Provider Type="Orleans.Storage.MemoryStorage" Name="MemoryStore" />
-      <Provider Type="Orleans.Storage.Couchbase.CouchbaseStorage" Name="CouchbaseStore" ConfigSectionName="couchbaseClients/couchbaseDataStore" />
+     <Provider Type="Orleans.Storage.Couchbase.CouchbaseStorage" Name="CouchbaseStore" UseGuidAsStorageKey="True" ConfigSectionName="couchbaseClients/couchbaseDataStore" />
     </StorageProviders>
     <SeedNode Address="localhost" Port="11111" />
   </Globals>
@@ -50,10 +61,3 @@
  {
  }
 ```
- 
-## REMINDER  
- the newest Couchbase-net-client has some bug use with Orleans.  
- I submit a pull request to fixed this problem.(https://github.com/couchbase/couchbase-net-client/pull/34)  
- so this libary use a couchbase-net-client compile from https://github.com/weitaolee/couchbase-net-client  
- when Couchbase-net-client release a new version and slove this problem,I will use a nuget package to replace my branch.
- so now `you should use couchbase-net-client` in libs
