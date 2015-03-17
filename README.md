@@ -2,6 +2,10 @@
    Orleans Storage Provider Of Couchbase
 ##simple
   You can a simple from this link [https://github.com/weitaolee/Orleans.EventSourcing](https://github.com/weitaolee/Orleans.EventSourcing "Simple Link")
+
+##Install From Nuget
+    Install-Package Orleans.Storage.Couchbase
+
 ####update log 
 ######2015-3-16
    1.fix bug   
