@@ -10,6 +10,7 @@ using Couchbase.IO;
 using Couchbase.Configuration.Client;
 using Newtonsoft.Json;
 using System.Configuration;
+using System.Threading;
 using Couchbase.Configuration.Client.Providers;
 using Orleans.Runtime;
 
@@ -106,7 +107,7 @@ namespace Orleans.Storage.Couchbase
 
             var key = this.UseGuidAsStorageKey ? grainReference.GetPrimaryKey(out extendKey).ToString() : grainReference.ToKeyString();
 
-            var entityData = await DataManager.Read(key);
+            var entityData = await DataManager.ReadAsync(key);
 
             if (!string.IsNullOrEmpty(entityData))
             {
@@ -130,7 +131,7 @@ namespace Orleans.Storage.Couchbase
 
             var key = this.UseGuidAsStorageKey ? grainReference.GetPrimaryKey(out extendKey).ToString() : grainReference.ToKeyString();
 
-            return DataManager.Write(key, entityData);
+            return DataManager.WriteAsync(key, entityData);
         }
 
         /// <summary>
@@ -199,16 +200,25 @@ namespace Orleans.Storage.Couchbase
             var config = new ClientConfiguration(configSection);
             _cluster = new Cluster(config);
 
+            var tcs = new TaskCompletionSource<IBucket>();
+
+            WaitCallback initBucket;
+
             if (configSection.Buckets.Count > 0)
             {
                 var buckets = new BucketElement[configSection.Buckets.Count];
                 configSection.Buckets.CopyTo(buckets, 0);
 
                 var bucketSetting = buckets.First();
-                this._bucket = _cluster.OpenBucket(bucketSetting.Name, bucketSetting.Password);
+
+                initBucket = (state) => { tcs.SetResult(_cluster.OpenBucket(bucketSetting.Name)); };
             }
             else
-                this._bucket = _cluster.OpenBucket();
+                initBucket = (state) => { tcs.SetResult(_cluster.OpenBucket()); };
+
+            ThreadPool.QueueUserWorkItem(initBucket, null);
+
+            this._bucket = tcs.Task.Result;
         }
 
         /// <summary>
@@ -216,19 +226,28 @@ namespace Orleans.Storage.Couchbase
         /// </summary>
         /// <param name="key">The grain id string.</param>
         /// <returns>Completion promise for this operation.</returns>
-        public Task Delete(string key)
+        public async Task Delete(string key)
         {
-            var result = this._bucket.Remove(key);
+            var tcs = new TaskCompletionSource<IOperationResult>();
 
-            if (!result.Success)
+            WaitCallback removeItem = (state) =>
             {
-                var exist = this._bucket.Get<string>(key);
+                var result = this._bucket.Remove(key);
 
-                if (exist.Success)
-                    this._bucket.Remove(key);
-            }
+                if (!result.Success)
+                {
+                    var exist = this._bucket.Get<string>(key);
 
-            return TaskDone.Done;
+                    if (exist.Success)
+                        result = this._bucket.Remove(key);
+                }
+
+                tcs.SetResult(result);
+            };
+
+            ThreadPool.QueueUserWorkItem(removeItem, null);
+
+            await tcs.Task;
         }
 
         /// <summary>
@@ -236,18 +255,28 @@ namespace Orleans.Storage.Couchbase
         /// </summary>
         /// <param name="key">The grain id string.</param>
         /// <returns>Completion promise for this operation.</returns>
-        public Task<string> Read(string key)
+        public Task<string> ReadAsync(string key)
         {
-            var result = this._bucket.Get<string>(key);
+            var tcs = new TaskCompletionSource<IOperationResult<string>>();
+
+            WaitCallback readItem = (state) =>
+            {
+                var result = this._bucket.Get<string>(key);
+                tcs.SetResult(result);
+            };
+
+            ThreadPool.QueueUserWorkItem(readItem, null);
+
+            var opResult = tcs.Task.Result;
+
             var data = string.Empty;
-            if (result.Status == ResponseStatus.Success)
-                data = result.Value;
-            else if (result.Status == ResponseStatus.KeyNotFound)
+
+            if (opResult.Status == ResponseStatus.Success)
+                data = opResult.Value;
+            else if (opResult.Status == ResponseStatus.KeyNotFound)
                 data = string.Empty;
-            else if (result.Status == ResponseStatus.Busy)
-                throw new Exception("couchbase server too busy");
-            else if (result.Status == ResponseStatus.OperationTimeout)
-                throw new Exception("read from couchbase time out");
+            else
+                throw new Exception("Read from couchbase server error");
 
             return Task.FromResult(data);
         }
@@ -258,18 +287,24 @@ namespace Orleans.Storage.Couchbase
         /// <param name="key">The grain id string.</param>
         /// <param name="entityData">The grain state data to be stored./</param>
         /// <returns>Completion promise for this operation.</returns>
-        public Task Write(string key, string entityData)
+        public Task WriteAsync(string key, string entityData)
         {
-            var result = this._bucket.Upsert(key, entityData);
+            var tcs = new TaskCompletionSource<IOperationResult>();
 
-            if (result.Status == ResponseStatus.Success)
+            WaitCallback writeItem = (state) =>
+            {
+                var result = this._bucket.Upsert(key, entityData);
+                tcs.SetResult(result);
+            };
+
+            ThreadPool.QueueUserWorkItem(writeItem, null);
+
+            var opResult = tcs.Task.Result;
+
+            if (opResult.Status == ResponseStatus.Success)
                 return TaskDone.Done;
-            else if (result.Status == ResponseStatus.Busy)
-                throw new Exception("couchbase server too busy");
-            else if (result.Status == ResponseStatus.OperationTimeout)
-                throw new Exception("write to couchbase time out");
-            else if (result.Status == ResponseStatus.ValueTooLarge)
-                throw new Exception("data value too large to write");
+            else
+                throw new Exception("Write data to couchbase error");
 
             return TaskDone.Done;
         }
@@ -284,6 +319,6 @@ namespace Orleans.Storage.Couchbase
         }
 
         private static Cluster _cluster;
-        private IBucket _bucket;
+        private readonly IBucket _bucket;
     }
 }

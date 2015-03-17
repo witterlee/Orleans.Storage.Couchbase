@@ -7,6 +7,9 @@
     Install-Package Orleans.Storage.Couchbase
 
 ####update log 
+
+######2015-3-17
+   1.update Read/Write/Delete to AsyncMethod
 ######2015-3-16
    1.fix bug   
    2.add UseGuidAsStorageKey="True/Flase" config,default is True. 
@@ -61,7 +64,7 @@
 ###### 3. Code
 ```csharp
  [StorageProvider(ProviderName = "CouchbaseStore")]
- public class BankAccount : IGrain,IBacnkAccount
+ public class BankAccount : IGrain,IBankAccount
  {
  }
 ```
