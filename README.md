@@ -7,7 +7,8 @@
     Install-Package Orleans.Storage.Couchbase
 
 ####update log 
-
+######2015-3-22 
+   1.update orleans to v1.0.5
 ######2015-3-17 
    1.update Read/Write/Delete to AsyncMethod
 ######2015-3-16
