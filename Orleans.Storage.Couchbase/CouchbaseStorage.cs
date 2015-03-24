@@ -148,9 +148,7 @@ namespace Orleans.Storage.Couchbase
 
             var key = this.UseGuidAsStorageKey ? grainReference.GetPrimaryKey(out extendKey).ToString() : grainReference.ToKeyString();
 
-            DataManager.DeleteAsync(key);
-
-            return TaskDone.Done;
+            return DataManager.DeleteAsync(key);
         }
 
         /// <summary>
