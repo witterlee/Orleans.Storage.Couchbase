@@ -64,7 +64,8 @@ namespace Orleans.Storage.Couchbase
         {
             this.Name = name;
             this.ConfigSectionName = config.Properties["ConfigSectionName"];
-            var useGuidAsStorageKeyString = config.Properties["UseGuidAsStorageKey"];
+            string useGuidAsStorageKeyString;
+            config.Properties.TryGetValue("UseGuidAsStorageKey", out useGuidAsStorageKeyString);
             var useGuidAsStorageKey = true;//default is true
 
             if (!string.IsNullOrWhiteSpace(useGuidAsStorageKeyString))
